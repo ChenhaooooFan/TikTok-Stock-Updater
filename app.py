@@ -38,8 +38,14 @@ if tiktok_file and inventory_file:
             df_inventory["当前库存"] = pd.to_numeric(df_inventory["当前库存"], errors="coerce").fillna(0)
             sku_map = dict(zip(df_inventory["SKU编码"], df_inventory["当前库存"]))
 
-            # 开始匹配 SKU → 数量
-            start_row = header_row_index + 2
+            # 跳过提示文字，定位真实数据开始行
+            start_row = header_row_index + 1
+            while start_row < len(df_tiktok):
+                cell_value = str(df_tiktok.iat[start_row, qty_col]).strip()
+                if cell_value.replace('.', '', 1).isdigit() or cell_value == "":
+                    break
+                start_row += 1
+
             result_list = []
             unmatched_skus = []
 
@@ -49,7 +55,7 @@ if tiktok_file and inventory_file:
                 if raw_sku in sku_map:
                     result_list.append(str(int(sku_map[raw_sku])))
                 else:
-                    result_list.append(original_qty)  # 保留原 Quantity 列的值
+                    result_list.append(original_qty)  # 保留原始数量值
                     if raw_sku not in ["nan", "None", ""]:
                         unmatched_skus.append(raw_sku)
 
