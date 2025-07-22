@@ -48,10 +48,15 @@ if tiktok_file and inventory_file:
 
             final_output = "\n".join(result_list)
 
-            # ✅ 展示纯数字列用于复制
-            st.text_area("\U0001F4CB 复制以下纯数字库存列（粘贴至 Excel）", final_output, height=500)
+            # ✅ 展示纯数字列用于复制 + 复制按钮
+            st.download_button(
+                label="📋 复制库存列为 TXT 文件（可打开复制粘贴）",
+                data=final_output,
+                file_name="tiktok_warehouse_column.txt",
+                mime="text/plain"
+            )
 
-            st.info("提示：选中上方内容，右键复制或使用快捷键 Ctrl+C / Cmd+C 粘贴到 Excel")
+            st.text_area("\U0001F4CB 预览库存数字（粘贴至 Excel）", final_output, height=500)
 
             # 未匹配提示
             if unmatched:
