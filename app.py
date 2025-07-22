@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="TikTok库存列一键复制", layout="wide")
-st.title("📋 TikTok Quantity列生成器（可一键复制）")
+st.title("📋 TikTok Quantity 列生成器（含一键复制）")
 
 st.markdown("""
 将 TikTok 模板中的 `Seller SKU` 与库存表中的 `SKU编码` 对应，  
 仅生成 `Quantity in U.S Pickup Warehouse` 的数字列，  
-📋 可直接 **复制粘贴** 回 Excel 模板中。
+📋 可直接 **一键复制**，粘贴回模板中。
 """)
 
 # 上传文件
@@ -52,10 +52,19 @@ if tiktok_file and inventory_file:
                     if raw_sku not in ["nan", "None", ""]:
                         unmatched_skus.append(raw_sku)
 
-            # 输出可复制文本框
-            st.success("✅ 匹配成功！下方为库存数量列，可一键复制粘贴回 Excel：")
-            text_block = "\n".join(result_list)
-            st.text_area("📋 数字列（与模板中 Quantity 列对应）", text_block, height=500)
+            quantity_text = "\n".join(result_list)
+
+            # 显示复制按钮和文本内容
+            st.success("✅ 匹配成功！点击下方按钮复制整个库存列：")
+
+            st.code(quantity_text, language="text")
+
+            st.markdown(f"""
+                <button onclick="navigator.clipboard.writeText(`{quantity_text}`)"
+                style="background-color:#4CAF50;color:white;padding:10px 16px;border:none;border-radius:5px;cursor:pointer;margin-top:10px;">
+                📋 一键复制库存列
+                </button>
+                """, unsafe_allow_html=True)
 
             # 可选导出 CSV
             df_export = pd.DataFrame({
@@ -65,7 +74,6 @@ if tiktok_file and inventory_file:
             csv_file = df_export.to_csv(index=False).encode("utf-8-sig")
             st.download_button("📥 下载为 CSV", data=csv_file, file_name="quantity_column.csv", mime="text/csv")
 
-            # 提示未匹配
             if unmatched_skus:
                 st.warning("⚠️ 以下 SKU 未匹配成功（保留空白）：\n" + "\n".join(unmatched_skus[:10]) + ("\n..." if len(unmatched_skus) > 10 else ""))
 
