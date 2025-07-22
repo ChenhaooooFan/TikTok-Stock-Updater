@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="TikTok 批量库存更新工具", layout="wide")
-st.title("📦 TikTok 批量库存更新工具")
+st.set_page_config(page_title="库存列生成器", layout="wide")
+st.title("📋 TikTok Quantity 列生成器")
 
 st.markdown("""
-该工具从 TikTok 模板中自动识别 `Seller SKU` 和 `Quantity in U.S Pickup Warehouse` 列，  
-再从库存 CSV 中匹配 SKU，更新 TikTok 模板中对应的库存数量。
+将 TikTok 模板中 `Seller SKU` 与库存文件中的 `SKU编码` 对应，  
+仅输出 `Quantity in U.S Pickup Warehouse` 列的更新值，供你复制粘贴回模板中。
 """)
 
 # 上传文件
@@ -16,11 +16,10 @@ inventory_file = st.file_uploader("📤 上传库存文件（CSV）", type=["csv
 
 if tiktok_file and inventory_file:
     try:
-        # 读取文件
-        df_tiktok = pd.read_excel(tiktok_file, sheet_name=0, header=None)
-        df_inventory = pd.read_csv(inventory_file)
+        # 读取 TikTok 文件
+        df_tiktok = pd.read_excel(tiktok_file, header=None)
 
-        # 自动识别包含表头字段的行
+        # 自动识别列名所在行
         sku_col = qty_col = None
         header_row_index = None
         for i in range(5):
@@ -32,44 +31,38 @@ if tiktok_file and inventory_file:
                 break
 
         if sku_col is None or qty_col is None:
-            st.error("❌ 没有在前 5 行内找到 'Seller SKU' 或 'Quantity in U.S Pickup Warehouse' 字段，请确认格式。")
+            st.error("❌ 没找到 'Seller SKU' 或 'Quantity in U.S Pickup Warehouse' 列，请检查文件格式")
         else:
-            # 构建库存映射表
+            # 读取库存 CSV
+            df_inventory = pd.read_csv(inventory_file)
             df_inventory["SKU编码"] = df_inventory["SKU编码"].astype(str).str.strip()
             df_inventory["当前库存"] = pd.to_numeric(df_inventory["当前库存"], errors="coerce").fillna(0)
-            sku_map = dict(zip(df_inventory["SKU编码"], df_inventory["当前库存"]))
+            sku_dict = dict(zip(df_inventory["SKU编码"], df_inventory["当前库存"]))
 
-            # 数据区从 header_row_index + 2 开始（跳过表头 + 说明行）
+            # 从数据区开始读取 SKU 并生成数量列表
             start_row = header_row_index + 2
-            unmatched_skus = []
+            quantity_list = []
+            sku_list = []
 
             for i in range(start_row, len(df_tiktok)):
                 raw_sku = str(df_tiktok.iat[i, sku_col]).strip()
-                if raw_sku in sku_map:
-                    df_tiktok.iat[i, qty_col] = sku_map[raw_sku]
-                elif raw_sku not in ["nan", "None", ""]:
-                    unmatched_skus.append(raw_sku)
+                sku_list.append(raw_sku)
+                if raw_sku in sku_dict:
+                    quantity_list.append(int(sku_dict[raw_sku]))
+                else:
+                    quantity_list.append("")
 
-            # 输出提示
-            if unmatched_skus:
-                st.warning(f"⚠️ 以下 SKU 未匹配到库存，保持原值：\n" + "\n".join(unmatched_skus[:10]) + ("\n..." if len(unmatched_skus) > 10 else ""))
+            result_df = pd.DataFrame({
+                "SKU": sku_list,
+                "Updated Quantity in U.S Pickup Warehouse": quantity_list
+            })
 
-            # 导出为 Excel
-            def to_excel(df):
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df.to_excel(writer, index=False, header=False, sheet_name='Sheet1')
-                return output.getvalue()
+            st.success("✅ 匹配完成！下方是可以复制粘贴的库存列：")
+            st.dataframe(result_df, use_container_width=True)
 
-            updated_file = to_excel(df_tiktok)
-
-            st.success("✅ 更新完成，点击下载：")
-            st.download_button(
-                label="📥 下载更新后的 Excel 文件",
-                data=updated_file,
-                file_name="updated_tiktok_batch_edit.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            # 提供导出 CSV 选项
+            csv_data = result_df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("📥 下载为 CSV 文件", data=csv_data, file_name="quantity_column.csv", mime="text/csv")
 
     except Exception as e:
         st.error(f"❌ 发生错误：{e}")
