@@ -1,4 +1,12 @@
-pip install openpyxl
+import subprocess
+import sys
+
+# 自动安装 openpyxl
+try:
+    import openpyxl
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
+
 import streamlit as st
 import pandas as pd
 from io import BytesIO
