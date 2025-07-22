@@ -2,81 +2,55 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# 页面设置
-st.set_page_config(page_title="SyncVesta - 美甲库存同步工具", layout="wide")
-st.title("💅 SyncVesta – NailVesta TikTok 库存同步工具")
+st.set_page_config(page_title="TikTok 批量库存更新工具", layout="wide")
+st.title("📦 TikTok 批量库存更新工具")
 
-# 使用说明
 st.markdown("""
-**功能说明：**  
-📌 将 NailVesta 内部库存（CSV）按 `Seller SKU` 同步至 TikTok 表格  
-➡️ 更新 `Total quantity in U.S Pickup Warehouse` = 当前库存 + Locked quantity  
-✅ 匹配字段自动清洗（.strip()），导出文件保持原结构  
-⚠️ 未匹配 SKU 保留原值，并在页面提示  
-📤 导出为 Excel 文件 (.xlsx)
+该工具会从第 5 行开始，根据 `Seller SKU` 匹配库存文件的 `SKU编码`，更新 TikTok 模板表格中的  
+➡️ `Quantity in U.S Pickup Warehouse` 列的值。
 """)
 
 # 上传文件
-file1 = st.file_uploader("📤 上传 TikTok 导出文件（Excel）", type=["xlsx"])
-file2 = st.file_uploader("📤 上传 NailVesta 内部库存文件（CSV）", type=["csv"])
+tiktok_file = st.file_uploader("📤 上传 TikTok 批量编辑模板（Excel）", type=["xlsx"])
+inventory_file = st.file_uploader("📤 上传库存文件（CSV）", type=["csv"])
 
-if file1 and file2:
+if tiktok_file and inventory_file:
     try:
-        # 读取原始文件
-        df_tiktok_original = pd.read_excel(file1, sheet_name=0)
-        df_inventory_original = pd.read_csv(file2)
+        # 读取两个文件
+        df_tiktok = pd.read_excel(tiktok_file, sheet_name=0, header=None)
+        df_inventory = pd.read_csv(inventory_file)
 
-        # 创建副本用于处理
-        df_tiktok = df_tiktok_original.copy()
-        df_inventory = df_inventory_original.copy()
+        # 库存字典：清洗 SKU 字段用于匹配
+        inventory_map = df_inventory.copy()
+        inventory_map["SKU编码"] = inventory_map["SKU编码"].astype(str).str.strip()
+        inventory_map["当前库存"] = pd.to_numeric(inventory_map["当前库存"], errors="coerce").fillna(0)
+        sku_dict = dict(zip(inventory_map["SKU编码"], inventory_map["当前库存"]))
 
-        # 清洗 SKU 字段用于匹配（不会影响导出结构）
-        df_tiktok["__clean_sku__"] = df_tiktok["Seller SKU"].astype(str).str.strip()
-        df_inventory["__clean_sku__"] = df_inventory["SKU编码"].astype(str).str.strip()
-        df_inventory["库存"] = df_inventory["当前库存"]
+        # 找出字段所在列
+        header_row = df_tiktok.iloc[1]
+        sku_col = header_row[header_row == "Seller SKU"].index[0]
+        qty_col = header_row[header_row == "Quantity in U.S Pickup Warehouse"].index[0]
 
-        # 构建 SKU → 当前库存 映射字典
-        sku_to_inventory = df_inventory.set_index("__clean_sku__")["库存"].to_dict()
+        # 从第 4 行（索引为 4）开始是实际数据
+        for i in range(4, len(df_tiktok)):
+            sku = str(df_tiktok.iat[i, sku_col]).strip()
+            if sku in sku_dict:
+                df_tiktok.iat[i, qty_col] = sku_dict[sku]
 
-        # 匹配有效数据行
-        mask = df_tiktok["Seller SKU"].notna() & ~df_tiktok["Seller SKU"].astype(str).str.contains("Cannot be edited", na=False)
-        cleaned_skus = df_tiktok.loc[mask, "__clean_sku__"]
-
-        # 获取库存匹配结果
-        updated_inventory = cleaned_skus.map(sku_to_inventory)
-
-        # 获取 Locked quantity 并加总
-        locked = pd.to_numeric(df_tiktok.loc[mask, "Locked quantity"], errors='coerce').fillna(0)
-        final_values = updated_inventory.add(locked, fill_value=0)
-
-        # 未匹配的保持原始值
-        original_values = df_tiktok_original.loc[mask, "Total quantity in U.S Pickup Warehouse"]
-        final_values = final_values.where(updated_inventory.notna(), original_values)
-
-        # 写入结果到输出表
-        df_output = df_tiktok_original.copy()
-        df_output.loc[mask, "Total quantity in U.S Pickup Warehouse"] = final_values
-
-        # 提示未匹配的 SKU
-        unmatched_skus = cleaned_skus[updated_inventory.isna()].unique().tolist()
-        if unmatched_skus:
-            st.warning(f"⚠️ 以下 {len(unmatched_skus)} 个 SKU 未在库存中匹配成功（原值已保留）：\n" + "\n".join(unmatched_skus))
-
-        # 输出为 Excel 文件
+        # 生成下载 Excel
         def to_excel(df):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Sheet1')
+                df.to_excel(writer, index=False, header=False, sheet_name='Sheet1')
             return output.getvalue()
 
-        updated_excel = to_excel(df_output)
+        result_excel = to_excel(df_tiktok)
 
-        # 下载按钮
-        st.success("✅ 库存同步完成！点击下方按钮下载 Excel 文件：")
+        st.success("✅ 更新完成！点击下方按钮下载 Excel 文件：")
         st.download_button(
-            label="📥 下载更新后的 Excel 文件",
-            data=updated_excel,
-            file_name="updated_tiktok_inventory.xlsx",
+            label="📥 下载更新后的 TikTok 模板",
+            data=result_excel,
+            file_name="updated_tiktok_batch_edit.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
