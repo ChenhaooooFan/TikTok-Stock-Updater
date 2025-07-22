@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="TikTok库存列复制", layout="wide")
-st.title("📋 TikTok 库存列复制工具（纯数字）")
+st.title("\U0001F4CB TikTok 库存列复制工具（纯数字）")
 
 st.markdown("将 TikTok 模板与库存文件对比，仅生成纯数字的库存列，可直接粘贴至 Excel ✅")
 
-tiktok_file = st.file_uploader("📤 上传 TikTok 批量编辑模板（.xlsx）", type=["xlsx"])
-inventory_file = st.file_uploader("📤 上传库存 CSV 文件", type=["csv"])
+tiktok_file = st.file_uploader("\U0001F4C4 上传 TikTok 批量编辑模板（.xlsx）", type=["xlsx"])
+inventory_file = st.file_uploader("\U0001F4C4 上传库存 CSV 文件", type=["csv"])
 
 if tiktok_file and inventory_file:
     try:
@@ -49,19 +49,19 @@ if tiktok_file and inventory_file:
             final_output = "\n".join(result_list)
 
             # ✅ 仅显示纯数字列，完全干净
-            st.text_area("📋 复制以下纯数字库存列（粘贴至 Excel）", final_output, height=500)
+            st.text_area("\U0001F4CB 复制以下纯数字库存列（粘贴至 Excel）", final_output, height=500)
 
             # ✅ 一键复制按钮
             st.markdown(f"""
                 <button onclick="navigator.clipboard.writeText(`{final_output}`)"
                 style="background-color:#4CAF50;color:white;padding:10px 16px;border:none;border-radius:5px;cursor:pointer;">
-                📋 一键复制
+                \U0001F4CB 一键复制
                 </button>
                 """, unsafe_allow_html=True)
 
-            # 未匹配提示
+            # 未匹配提示（✅ 修复括号）
             if unmatched:
-                st.warning("⚠️ 以下 SKU 未匹配成功（原值保留）：\n" + "\n".join(unmatched[:10]) + ("\n..." if len(unmatched) > 10 else "")))
+                st.warning("⚠️ 以下 SKU 未匹配成功（原值保留）：\n" + "\n".join(unmatched[:10]) + ("\n..." if len(unmatched) > 10 else ""))
 
     except Exception as e:
         st.error(f"❌ 错误：{e}")
