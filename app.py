@@ -1,26 +1,20 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="📋 仅数字库存列复制器", layout="wide")
-st.title("📋 TikTok 库存列生成器（纯数字复制）")
+st.set_page_config(page_title="TikTok库存列复制", layout="wide")
+st.title("📋 TikTok 库存列复制工具（纯数字）")
 
-st.markdown("""
-将 TikTok 模板中的 `Seller SKU` 与库存表中的 `SKU编码` 对应，  
-只生成纯数字的 `Quantity in U.S Pickup Warehouse` 列 ✅  
-👉 一键复制，无任何额外说明文字。
-""")
+st.markdown("将 TikTok 模板与库存文件对比，仅生成纯数字的库存列，可直接粘贴至 Excel ✅")
 
-# 上传文件
-tiktok_file = st.file_uploader("📤 上传 TikTok 批量编辑模板（Excel）", type=["xlsx"])
-inventory_file = st.file_uploader("📤 上传库存文件（CSV）", type=["csv"])
+tiktok_file = st.file_uploader("📤 上传 TikTok 批量编辑模板（.xlsx）", type=["xlsx"])
+inventory_file = st.file_uploader("📤 上传库存 CSV 文件", type=["csv"])
 
 if tiktok_file and inventory_file:
     try:
         df_tiktok = pd.read_excel(tiktok_file, header=None)
+        sku_col = qty_col = header_row_index = None
 
-        # 自动定位表头行和列索引
-        sku_col = qty_col = None
-        header_row_index = None
+        # 找列名
         for i in range(5):
             row = df_tiktok.iloc[i].astype(str).str.strip()
             if "Seller SKU" in row.values and "Quantity in U.S Pickup Warehouse" in row.values:
@@ -30,44 +24,44 @@ if tiktok_file and inventory_file:
                 break
 
         if sku_col is None or qty_col is None:
-            st.error("❌ 未找到所需的列，请确认文件格式")
+            st.error("❌ 没找到所需列，请检查上传的 Excel 文件")
         else:
             df_inventory = pd.read_csv(inventory_file)
             df_inventory["SKU编码"] = df_inventory["SKU编码"].astype(str).str.strip()
             df_inventory["当前库存"] = pd.to_numeric(df_inventory["当前库存"], errors="coerce").fillna(0)
             sku_map = dict(zip(df_inventory["SKU编码"], df_inventory["当前库存"]))
 
-            # 匹配并保留原值（若未匹配）
             start_row = header_row_index + 2
             result_list = []
-            unmatched_skus = []
+            unmatched = []
 
             for i in range(start_row, len(df_tiktok)):
-                raw_sku = str(df_tiktok.iat[i, sku_col]).strip()
+                sku = str(df_tiktok.iat[i, sku_col]).strip()
                 original_qty = df_tiktok.iat[i, qty_col]
 
-                if raw_sku in sku_map:
-                    result_list.append(str(int(sku_map[raw_sku])))
+                if sku in sku_map:
+                    result_list.append(str(int(sku_map[sku])))
                 else:
                     result_list.append(str(original_qty) if pd.notna(original_qty) else "")
-                    if raw_sku not in ["nan", "None", ""]:
-                        unmatched_skus.append(raw_sku)
+                    if sku not in ["nan", "None", ""]:
+                        unmatched.append(sku)
 
-            quantity_text = "\n".join(result_list)
+            final_output = "\n".join(result_list)
 
-            # 显示纯数字 + 复制按钮
-            st.text_area("📋 复制这段数字（直接粘贴到 Excel 中）", quantity_text, height=500)
+            # ✅ 仅显示纯数字列，完全干净
+            st.text_area("📋 复制以下纯数字库存列（粘贴至 Excel）", final_output, height=500)
 
+            # ✅ 一键复制按钮
             st.markdown(f"""
-                <button onclick="navigator.clipboard.writeText(`{quantity_text}`)"
-                style="background-color:#008CBA;color:white;padding:10px 16px;border:none;border-radius:5px;cursor:pointer;margin-top:10px;">
-                📋 一键复制纯数字库存列
+                <button onclick="navigator.clipboard.writeText(`{final_output}`)"
+                style="background-color:#4CAF50;color:white;padding:10px 16px;border:none;border-radius:5px;cursor:pointer;">
+                📋 一键复制
                 </button>
                 """, unsafe_allow_html=True)
 
-            # 提示未匹配
-            if unmatched_skus:
-                st.warning("⚠️ 以下 SKU 未匹配成功（已保留原值）：\n" + "\n".join(unmatched_skus[:10]) + ("\n..." if len(unmatched_skus) > 10 else ""))
+            # 未匹配提示
+            if unmatched:
+                st.warning("⚠️ 以下 SKU 未匹配成功（原值保留）：\n" + "\n".join(unmatched[:10]) + ("\n..." if len(unmatched) > 10 else "")))
 
     except Exception as e:
         st.error(f"❌ 错误：{e}")
