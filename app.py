@@ -5,12 +5,12 @@ from io import BytesIO
 st.set_page_config(page_title="SyncVesta - 美甲库存同步工具", layout="wide")
 st.title("💅 SyncVesta – NailVesta TikTok 库存同步工具")
 
-st.markdown(\"""
+st.markdown("""
 **功能说明：**  
 📌 将 NailVesta 内部 CSV 库存（按 Seller SKU）更新至 TikTok Excel 的  
 ➡️ `Total quantity in U.S Pickup Warehouse` 列  
 支持文件上传 + 一键下载结果。
-\""")
+""")
 
 # 上传文件
 file1 = st.file_uploader("📤 上传 TikTok 导出文件（Excel）", type=["xlsx"])
