@@ -9,9 +9,10 @@ st.title("💅 SyncVesta – NailVesta TikTok 库存同步工具")
 # 使用说明
 st.markdown("""
 **功能说明：**  
-📌 将 NailVesta 内部 CSV 库存（按 Seller SKU）更新至 TikTok Excel 的  
+📌 按 `Seller SKU` 将 NailVesta 内部库存同步到 TikTok 导出 Excel 的  
 ➡️ `Total quantity in U.S Pickup Warehouse` 列  
-🔒 如果库存为空（或找不到），保留原文件值  
+✅ 匹配字段自动清洗（.strip），但导出文件保持原样  
+🔍 自动提示未匹配的 SKU  
 📤 最终生成 Excel 文件 (.xlsx)
 """)
 
@@ -21,36 +22,48 @@ file2 = st.file_uploader("📤 上传 NailVesta 内部库存文件（CSV）", ty
 
 if file1 and file2:
     try:
-        # 读取文件
-        df_tiktok = pd.read_excel(file1, sheet_name=0)
-        df_inventory = pd.read_csv(file2)
+        # 读取原始文件
+        df_tiktok_original = pd.read_excel(file1, sheet_name=0)
+        df_inventory_original = pd.read_csv(file2)
 
-        # 清洗库存数据
-        df_inventory = df_inventory.rename(columns={"SKU编码": "Seller SKU", "当前库存": "库存"})
-        df_inventory = df_inventory[["Seller SKU", "库存"]].dropna(subset=["Seller SKU"])
+        # 拷贝副本用于匹配
+        df_tiktok = df_tiktok_original.copy()
+        df_inventory = df_inventory_original.copy()
 
-        # 过滤 TikTok 数据中可编辑部分
+        # 清洗 SKU 字段用于匹配
+        df_tiktok["__clean_sku__"] = df_tiktok["Seller SKU"].astype(str).str.strip()
+        df_inventory["__clean_sku__"] = df_inventory["SKU编码"].astype(str).str.strip()
+        df_inventory["库存"] = df_inventory["当前库存"]
+
+        # 创建映射
+        sku_to_inventory = df_inventory.set_index("__clean_sku__")["库存"].to_dict()
+
+        # 筛选可更新区域
         mask = df_tiktok["Seller SKU"].notna() & ~df_tiktok["Seller SKU"].astype(str).str.contains("Cannot be edited", na=False)
+        cleaned_skus = df_tiktok.loc[mask, "__clean_sku__"]
 
-        # 合并库存数据
-        df_update = df_tiktok[mask].merge(df_inventory, on="Seller SKU", how="left")
-
-        # 仅在库存有值时更新
-        updated_values = df_update["库存"]
-        original_values = df_tiktok.loc[mask, "Total quantity in U.S Pickup Warehouse"]
+        # 映射出库存值
+        updated_values = cleaned_skus.map(sku_to_inventory)
+        original_values = df_tiktok_original.loc[mask, "Total quantity in U.S Pickup Warehouse"]
         final_values = updated_values.where(updated_values.notna(), original_values)
 
-        # 应用更新
-        df_tiktok.loc[mask, "Total quantity in U.S Pickup Warehouse"] = final_values
+        # 应用回原始表格副本
+        df_tiktok_output = df_tiktok_original.copy()
+        df_tiktok_output.loc[mask, "Total quantity in U.S Pickup Warehouse"] = final_values
 
-        # 导出为 Excel 文件
+        # 提示未匹配的 SKU
+        unmatched_skus = cleaned_skus[updated_values.isna()].unique().tolist()
+        if unmatched_skus:
+            st.warning(f"⚠️ 以下 {len(unmatched_skus)} 个 SKU 未在库存中匹配成功：\\n" + "\\n".join(unmatched_skus))
+
+        # 输出为 Excel 文件
         def to_excel(df):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name='Sheet1')
             return output.getvalue()
 
-        updated_excel = to_excel(df_tiktok)
+        updated_excel = to_excel(df_tiktok_output)
 
         st.success("✅ 更新完成！点击下方按钮下载 Excel 文件：")
         st.download_button(
