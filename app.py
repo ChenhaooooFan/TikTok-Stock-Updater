@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="TikTok库存列一键复制", layout="wide")
-st.title("📋 TikTok Quantity 列生成器（保留原值 + 一键复制）")
+st.set_page_config(page_title="📋 仅数字库存列复制器", layout="wide")
+st.title("📋 TikTok 库存列生成器（纯数字复制）")
 
 st.markdown("""
 将 TikTok 模板中的 `Seller SKU` 与库存表中的 `SKU编码` 对应，  
-仅生成 `Quantity in U.S Pickup Warehouse` 的数字列，  
-📋 支持一键复制，且未匹配的 SKU 保留原始数量不变。
+只生成纯数字的 `Quantity in U.S Pickup Warehouse` 列 ✅  
+👉 一键复制，无任何额外说明文字。
 """)
 
 # 上传文件
@@ -18,7 +18,7 @@ if tiktok_file and inventory_file:
     try:
         df_tiktok = pd.read_excel(tiktok_file, header=None)
 
-        # 自动定位包含表头的那一行
+        # 自动定位表头行和列索引
         sku_col = qty_col = None
         header_row_index = None
         for i in range(5):
@@ -30,15 +30,14 @@ if tiktok_file and inventory_file:
                 break
 
         if sku_col is None or qty_col is None:
-            st.error("❌ 没找到 'Seller SKU' 或 'Quantity in U.S Pickup Warehouse' 列，请确认表格格式")
+            st.error("❌ 未找到所需的列，请确认文件格式")
         else:
-            # 读取库存文件
             df_inventory = pd.read_csv(inventory_file)
             df_inventory["SKU编码"] = df_inventory["SKU编码"].astype(str).str.strip()
             df_inventory["当前库存"] = pd.to_numeric(df_inventory["当前库存"], errors="coerce").fillna(0)
             sku_map = dict(zip(df_inventory["SKU编码"], df_inventory["当前库存"]))
 
-            # 开始匹配 SKU → 数量
+            # 匹配并保留原值（若未匹配）
             start_row = header_row_index + 2
             result_list = []
             unmatched_skus = []
@@ -56,26 +55,19 @@ if tiktok_file and inventory_file:
 
             quantity_text = "\n".join(result_list)
 
-            st.success("✅ 匹配成功！点击下方按钮复制整个库存列（含保留原值）：")
-            st.code(quantity_text, language="text")
+            # 显示纯数字 + 复制按钮
+            st.text_area("📋 复制这段数字（直接粘贴到 Excel 中）", quantity_text, height=500)
 
             st.markdown(f"""
                 <button onclick="navigator.clipboard.writeText(`{quantity_text}`)"
-                style="background-color:#4CAF50;color:white;padding:10px 16px;border:none;border-radius:5px;cursor:pointer;margin-top:10px;">
-                📋 一键复制库存列
+                style="background-color:#008CBA;color:white;padding:10px 16px;border:none;border-radius:5px;cursor:pointer;margin-top:10px;">
+                📋 一键复制纯数字库存列
                 </button>
                 """, unsafe_allow_html=True)
 
-            # 可选导出 CSV
-            df_export = pd.DataFrame({
-                "SKU": df_tiktok.loc[start_row:, sku_col].astype(str).str.strip().values,
-                "Updated Quantity": result_list
-            })
-            csv_file = df_export.to_csv(index=False).encode("utf-8-sig")
-            st.download_button("📥 下载为 CSV", data=csv_file, file_name="quantity_column.csv", mime="text/csv")
-
+            # 提示未匹配
             if unmatched_skus:
                 st.warning("⚠️ 以下 SKU 未匹配成功（已保留原值）：\n" + "\n".join(unmatched_skus[:10]) + ("\n..." if len(unmatched_skus) > 10 else ""))
 
     except Exception as e:
-        st.error(f"❌ 发生错误：{e}")
+        st.error(f"❌ 错误：{e}")
