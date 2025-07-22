@@ -48,7 +48,7 @@ if tiktok_file and inventory_file:
                 if raw_sku in sku_map:
                     result_list.append(str(int(sku_map[raw_sku])))
                 else:
-                    result_list.append("")
+                    result_list.append(raw_sku)  # 保留原值而非空白
                     if raw_sku not in ["nan", "None", ""]:
                         unmatched_skus.append(raw_sku)
 
@@ -75,7 +75,7 @@ if tiktok_file and inventory_file:
             st.download_button("📥 下载为 CSV", data=csv_file, file_name="quantity_column.csv", mime="text/csv")
 
             if unmatched_skus:
-                st.warning("⚠️ 以下 SKU 未匹配成功（保留空白）：\n" + "\n".join(unmatched_skus[:10]) + ("\n..." if len(unmatched_skus) > 10 else ""))
+                st.warning("⚠️ 以下 SKU 未匹配成功（已保留原值）：\n" + "\n".join(unmatched_skus[:10]) + ("\n..." if len(unmatched_skus) > 10 else ""))
 
     except Exception as e:
         st.error(f"❌ 发生错误：{e}")
