@@ -48,18 +48,12 @@ if tiktok_file and inventory_file:
 
             final_output = "\n".join(result_list)
 
-            # ✅ 仅显示纯数字列，完全干净
+            # ✅ 展示纯数字列用于复制
             st.text_area("\U0001F4CB 复制以下纯数字库存列（粘贴至 Excel）", final_output, height=500)
 
-            # ✅ 一键复制按钮
-            st.markdown(f"""
-                <button onclick="navigator.clipboard.writeText(`{final_output}`)"
-                style="background-color:#4CAF50;color:white;padding:10px 16px;border:none;border-radius:5px;cursor:pointer;">
-                \U0001F4CB 一键复制
-                </button>
-                """, unsafe_allow_html=True)
+            st.info("提示：选中上方内容，右键复制或使用快捷键 Ctrl+C / Cmd+C 粘贴到 Excel")
 
-            # 未匹配提示（✅ 修复括号）
+            # 未匹配提示
             if unmatched:
                 st.warning("⚠️ 以下 SKU 未匹配成功（原值保留）：\n" + "\n".join(unmatched[:10]) + ("\n..." if len(unmatched) > 10 else ""))
 
