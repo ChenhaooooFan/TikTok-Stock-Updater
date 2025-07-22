@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="TikTok库存列一键复制", layout="wide")
-st.title("📋 TikTok Quantity 列生成器（含一键复制）")
+st.title("📋 TikTok Quantity 列生成器（保留原值 + 一键复制）")
 
 st.markdown("""
 将 TikTok 模板中的 `Seller SKU` 与库存表中的 `SKU编码` 对应，  
 仅生成 `Quantity in U.S Pickup Warehouse` 的数字列，  
-📋 可直接 **一键复制**，粘贴回模板中。
+📋 支持一键复制，且未匹配的 SKU 保留原始数量不变。
 """)
 
 # 上传文件
@@ -45,18 +45,18 @@ if tiktok_file and inventory_file:
 
             for i in range(start_row, len(df_tiktok)):
                 raw_sku = str(df_tiktok.iat[i, sku_col]).strip()
+                original_qty = df_tiktok.iat[i, qty_col]
+
                 if raw_sku in sku_map:
                     result_list.append(str(int(sku_map[raw_sku])))
                 else:
-                    result_list.append("")
+                    result_list.append(str(original_qty) if pd.notna(original_qty) else "")
                     if raw_sku not in ["nan", "None", ""]:
                         unmatched_skus.append(raw_sku)
 
             quantity_text = "\n".join(result_list)
 
-            # 显示复制按钮和文本内容
-            st.success("✅ 匹配成功！点击下方按钮复制整个库存列：")
-
+            st.success("✅ 匹配成功！点击下方按钮复制整个库存列（含保留原值）：")
             st.code(quantity_text, language="text")
 
             st.markdown(f"""
@@ -75,7 +75,7 @@ if tiktok_file and inventory_file:
             st.download_button("📥 下载为 CSV", data=csv_file, file_name="quantity_column.csv", mime="text/csv")
 
             if unmatched_skus:
-                st.warning("⚠️ 以下 SKU 未匹配成功（保留空白）：\n" + "\n".join(unmatched_skus[:10]) + ("\n..." if len(unmatched_skus) > 10 else ""))
+                st.warning("⚠️ 以下 SKU 未匹配成功（已保留原值）：\n" + "\n".join(unmatched_skus[:10]) + ("\n..." if len(unmatched_skus) > 10 else ""))
 
     except Exception as e:
         st.error(f"❌ 发生错误：{e}")
