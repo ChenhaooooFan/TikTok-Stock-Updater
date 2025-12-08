@@ -62,7 +62,15 @@ def bundle_stock_min(sku_with_size: str, stock_map: dict, *, for_unmatched: list
 
 if tiktok_file and inventory_file:
     try:
-        df_tiktok = pd.read_excel(tiktok_file, header=None)
+        import tempfile
+
+if tiktok_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp.write(tiktok_file.read())
+        temp_path = tmp.name
+
+    df_tiktok = pd.read_excel(temp_path, header=None)
+
 
         # 自动定位包含表头的那一行
         sku_col = qty_col = None
