@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import tempfile
+from openpyxl import load_workbook
 
 st.set_page_config(page_title="TikTok库存列生成器", layout="wide")
 st.title("📋 TikTok Quantity 列生成器（含一键复制）")
@@ -35,18 +36,17 @@ def split_bundle(sku_with_size: str):
     return [s], False
 
 
-# —— 工具：计算库存 —— #
+# —— 工具：Bundle 库存计算 —— #
 def bundle_stock_min(sku_with_size: str, stock_map: dict, *, for_unmatched: list):
     skus, is_bundle = split_bundle(sku_with_size)
 
-    if not is_bundle:  # 单品
+    if not is_bundle:  
         if skus[0] in stock_map:
             return str(int(stock_map[skus[0]]))
         else:
             for_unmatched.append(skus[0])
             return ""
 
-    # Bundle：检查是否所有组成 SKU 都存在
     found_all = all(k in stock_map for k in skus)
     if not found_all:
         missing = [k for k in skus if k not in stock_map]
@@ -59,15 +59,20 @@ def bundle_stock_min(sku_with_size: str, stock_map: dict, *, for_unmatched: list
 # —— 主逻辑 —— #
 if tiktok_file and inventory_file:
     try:
-        # 写入临时文件（解决上传流不完整）
+        # 将上传 Excel 写到临时文件
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(tiktok_file.read())
             temp_path = tmp.name
 
-        # 使用 calamine 引擎强制读取（解决 TikTok 模板样式 XML 错误）
-        df_tiktok = pd.read_excel(temp_path, header=None, engine="calamine")
+        # 使用 openpyxl 的只读模式读取（不解析样式 → 永不报 XML 错误）
+        wb = load_workbook(temp_path, data_only=True, read_only=True)
+        ws = wb.active
 
-        # 自动定位表头
+        # 转成 pandas dataframe
+        data = list(ws.values)
+        df_tiktok = pd.DataFrame(data)
+
+        # 自动查找表头
         sku_col = qty_col = None
         header_row_index = None
 
@@ -83,14 +88,13 @@ if tiktok_file and inventory_file:
             st.error("❌ 未找到表头：请确认是否为 TikTok 批量编辑模板。")
             st.stop()
 
-        # 读取库存
+        # 读取库存 CSV
         df_inventory = pd.read_csv(inventory_file)
         df_inventory["SKU编码"] = df_inventory["SKU编码"].astype(str).str.strip()
         df_inventory["当前库存"] = pd.to_numeric(df_inventory["当前库存"], errors="coerce").fillna(0)
-
         stock_map = dict(zip(df_inventory["SKU编码"], df_inventory["当前库存"]))
 
-        # 找到真实数据起始行
+        # 找到数据开始行
         start_row = header_row_index + 1
         while start_row < len(df_tiktok):
             val = str(df_tiktok.iat[start_row, qty_col]).strip()
@@ -101,7 +105,7 @@ if tiktok_file and inventory_file:
         result_list = []
         unmatched_skus = []
 
-        # —— SKU 匹配 —— #
+        # 逐行匹配 SKU
         for i in range(start_row, len(df_tiktok)):
             raw_sku = str(df_tiktok.iat[i, sku_col]).strip()
             original_qty = str(df_tiktok.iat[i, qty_col]).strip()
@@ -113,7 +117,6 @@ if tiktok_file and inventory_file:
             else:
                 result_list.append(original_qty)
 
-        # 输出文本（供复制）
         output_text = "\n".join(result_list)
 
         st.success("✅ 匹配成功！点击下方按钮复制整个库存列：")
@@ -130,7 +133,7 @@ if tiktok_file and inventory_file:
             unsafe_allow_html=True,
         )
 
-        # 下载 CSV
+        # 下载结果 CSV
         df_export = pd.DataFrame({
             "SKU": df_tiktok.loc[start_row:, sku_col].astype(str).str.strip().values,
             "Updated Quantity": result_list
