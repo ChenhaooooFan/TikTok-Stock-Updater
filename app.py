@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import re
 import tempfile
-from openpyxl import load_workbook
+from xlsx2csv import Xlsx2csv
+import csv
 
 st.set_page_config(page_title="TikTok库存列生成器", layout="wide")
 st.title("📋 TikTok Quantity 列生成器（含一键复制）")
@@ -40,7 +41,7 @@ def split_bundle(sku_with_size: str):
 def bundle_stock_min(sku_with_size: str, stock_map: dict, *, for_unmatched: list):
     skus, is_bundle = split_bundle(sku_with_size)
 
-    if not is_bundle:  
+    if not is_bundle:
         if skus[0] in stock_map:
             return str(int(stock_map[skus[0]]))
         else:
@@ -59,24 +60,23 @@ def bundle_stock_min(sku_with_size: str, stock_map: dict, *, for_unmatched: list
 # —— 主逻辑 —— #
 if tiktok_file and inventory_file:
     try:
-        # 将上传 Excel 写到临时文件
+        # 保存 Excel 上传文件
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(tiktok_file.read())
-            temp_path = tmp.name
+            excel_path = tmp.name
 
-        # 使用 openpyxl 的只读模式读取（不解析样式 → 永不报 XML 错误）
-        wb = load_workbook(temp_path, data_only=True, read_only=True)
-        ws = wb.active
+        # 将 Excel 第一页转成 CSV（xlsx2csv 跳过所有样式，永不报 XML 错）
+        csv_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+        Xlsx2csv(excel_path, outputencoding="utf-8").convert(csv_temp.name)
 
-        # 转成 pandas dataframe
-        data = list(ws.values)
-        df_tiktok = pd.DataFrame(data)
+        # 用 pandas 读取 CSV（就是 TikTok 模板内容）
+        df_tiktok = pd.read_csv(csv_temp.name, header=None)
 
-        # 自动查找表头
+        # 自动识别表头
         sku_col = qty_col = None
         header_row_index = None
 
-        for i in range(10):
+        for i in range(20):
             row = df_tiktok.iloc[i].astype(str).str.strip()
             if "Seller SKU" in row.values and "Quantity in U.S Pickup Warehouse" in row.values:
                 sku_col = row[row == "Seller SKU"].index[0]
@@ -88,13 +88,13 @@ if tiktok_file and inventory_file:
             st.error("❌ 未找到表头：请确认是否为 TikTok 批量编辑模板。")
             st.stop()
 
-        # 读取库存 CSV
+        # 读库存 CSV
         df_inventory = pd.read_csv(inventory_file)
         df_inventory["SKU编码"] = df_inventory["SKU编码"].astype(str).str.strip()
         df_inventory["当前库存"] = pd.to_numeric(df_inventory["当前库存"], errors="coerce").fillna(0)
         stock_map = dict(zip(df_inventory["SKU编码"], df_inventory["当前库存"]))
 
-        # 找到数据开始行
+        # 找数据起始行
         start_row = header_row_index + 1
         while start_row < len(df_tiktok):
             val = str(df_tiktok.iat[start_row, qty_col]).strip()
@@ -105,7 +105,7 @@ if tiktok_file and inventory_file:
         result_list = []
         unmatched_skus = []
 
-        # 逐行匹配 SKU
+        # 匹配 SKU
         for i in range(start_row, len(df_tiktok)):
             raw_sku = str(df_tiktok.iat[i, sku_col]).strip()
             original_qty = str(df_tiktok.iat[i, qty_col]).strip()
@@ -133,7 +133,7 @@ if tiktok_file and inventory_file:
             unsafe_allow_html=True,
         )
 
-        # 下载结果 CSV
+        # 下载 CSV
         df_export = pd.DataFrame({
             "SKU": df_tiktok.loc[start_row:, sku_col].astype(str).str.strip().values,
             "Updated Quantity": result_list
@@ -147,11 +147,11 @@ if tiktok_file and inventory_file:
             mime="text/csv",
         )
 
-        # 显示未匹配 SKU
+        # 未匹配 SKU
         if unmatched_skus:
             uniq = list(dict.fromkeys(unmatched_skus))
             st.warning(
-                "⚠️ 以下 SKU 未在库存表中找到（Bundle 按 0；单品保留原数量）：\n" +
+                "⚠️ 以下 SKU 未找到（Bundle 计 0，单品保留原值）：\n" +
                 "\n".join(uniq[:20]) +
                 ("\n..." if len(uniq) > 20 else "")
             )
