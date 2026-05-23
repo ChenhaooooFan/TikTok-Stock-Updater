@@ -8,11 +8,11 @@ st.set_page_config(page_title="TikTok库存列生成器", page_icon="💅", layo
 st.title("📋 TikTok Quantity 列生成器（含一键复制）")
 
 st.markdown("""
-将 TikTok 模板中的 `Seller SKU` 与库存表中的 `SKU编码` 对应，  
-仅生成 `Quantity in U.S Pickup Warehouse` 的数字列，  
+将 TikTok 模板中的 `Seller SKU` 与库存表中的 `SKU编码` 对应，
+仅生成 `Quantity in U.S Pickup Warehouse` 的数字列，
 📋 可直接 **一键复制**，粘贴回模板中。
 
-本版更新：  
+本版更新：
 如果单品 SKU 没有在库存表中找到，程序会 **保留 TikTok 原库存**，并在下方清楚列出这些 SKU，方便溯源。
 """)
 
@@ -20,20 +20,21 @@ tiktok_file = st.file_uploader("📤 上传 TikTok 批量编辑模板（Excel）
 inventory_file = st.file_uploader("📤 上传库存文件（CSV）", type=["csv"])
 
 
-# ★ 新增：清洗不可见字符
+# 清洗不可见字符（零宽空格等）
 def clean_sku(s: str) -> str:
     return (
         str(s)
         .strip()
-        .replace('\u200b', '')   # 零宽空格
-        .replace('\u200c', '')   # 零宽非连接符
-        .replace('\u200d', '')   # 零宽连接符
-        .replace('\ufeff', '')   # BOM
+        .replace('​', '')
+        .replace('‌', '')
+        .replace('‍', '')
+        .replace('﻿', '')
     )
 
 
+# Bundle 拆分
 def split_bundle(sku_with_size: str):
-    s = clean_sku(sku_with_size)   # ★ 改：用 clean_sku 替代原来的 .strip()
+    s = clean_sku(sku_with_size)
 
     if "-" not in s:
         return [s], False
@@ -50,26 +51,48 @@ def split_bundle(sku_with_size: str):
     return [s], False
 
 
+# 计算库存
 def compute_stock_result(sku_with_size: str, stock_map: dict):
     skus, is_bundle = split_bundle(sku_with_size)
 
     if not is_bundle:
         sku = skus[0]
         if sku in stock_map:
-            return {"computed_qty": str(int(stock_map[sku])), "is_bundle": False,
-                    "missing_skus": [], "matched_skus": [sku], "action": "matched_single"}
-        return {"computed_qty": "", "is_bundle": False, "missing_skus": [sku],
-                "matched_skus": [], "action": "unmatched_single_keep_original"}
+            return {
+                "computed_qty": str(int(stock_map[sku])),
+                "is_bundle": False,
+                "missing_skus": [],
+                "matched_skus": [sku],
+                "action": "matched_single"
+            }
+        return {
+            "computed_qty": "",
+            "is_bundle": False,
+            "missing_skus": [sku],
+            "matched_skus": [],
+            "action": "unmatched_single_keep_original"
+        }
 
     missing = [k for k in skus if k not in stock_map]
     if missing:
-        return {"computed_qty": "0", "is_bundle": True, "missing_skus": missing,
-                "matched_skus": [k for k in skus if k in stock_map], "action": "bundle_missing_set_zero"}
+        return {
+            "computed_qty": "0",
+            "is_bundle": True,
+            "missing_skus": missing,
+            "matched_skus": [k for k in skus if k in stock_map],
+            "action": "bundle_missing_set_zero"
+        }
 
-    return {"computed_qty": str(min(int(stock_map[k]) for k in skus)), "is_bundle": True,
-            "missing_skus": [], "matched_skus": skus, "action": "matched_bundle"}
+    return {
+        "computed_qty": str(min(int(stock_map[k]) for k in skus)),
+        "is_bundle": True,
+        "missing_skus": [],
+        "matched_skus": skus,
+        "action": "matched_bundle"
+    }
 
 
+# 主逻辑
 if tiktok_file and inventory_file:
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
@@ -81,7 +104,10 @@ if tiktok_file and inventory_file:
 
         df_tiktok = pd.read_csv(csv_temp.name, header=None)
 
-        sku_col = qty_col = product_name_col = header_row_index = None
+        sku_col = None
+        qty_col = None
+        product_name_col = None
+        header_row_index = None
 
         for i in range(min(20, len(df_tiktok))):
             row = df_tiktok.iloc[i].astype(str).str.strip()
@@ -105,7 +131,6 @@ if tiktok_file and inventory_file:
             st.error("❌ 库存文件必须包含 `SKU编码` 和 `当前库存` 两列。")
             st.stop()
 
-        # ★ 改：清洗库存表 SKU 编码
         df_inventory["SKU编码"] = df_inventory["SKU编码"].astype(str).apply(clean_sku)
         df_inventory["当前库存"] = pd.to_numeric(df_inventory["当前库存"], errors="coerce").fillna(0)
         stock_map = dict(zip(df_inventory["SKU编码"], df_inventory["当前库存"]))
@@ -123,7 +148,6 @@ if tiktok_file and inventory_file:
         all_unmatched_skus = []
 
         for i in range(start_row, len(df_tiktok)):
-            # ★ 改：清洗 TikTok 模板 Seller SKU
             raw_sku = clean_sku(df_tiktok.iat[i, sku_col])
             original_qty = str(df_tiktok.iat[i, qty_col]).strip()
 
@@ -145,17 +169,23 @@ if tiktok_file and inventory_file:
             if result["action"] == "unmatched_single_keep_original":
                 all_unmatched_skus.extend(result["missing_skus"])
                 preserved_original_records.append({
-                    "Excel Row": i + 1, "Product Name": product_name, "Seller SKU": raw_sku,
-                    "Original Quantity Kept": original_qty, "Final Quantity": final_qty,
+                    "Excel Row": i + 1,
+                    "Product Name": product_name,
+                    "Seller SKU": raw_sku,
+                    "Original Quantity Kept": original_qty,
+                    "Final Quantity": final_qty,
                     "Reason": "SKU not found in inventory file, original TikTok quantity kept"
                 })
 
             if result["action"] == "bundle_missing_set_zero":
                 all_unmatched_skus.extend(result["missing_skus"])
                 bundle_missing_records.append({
-                    "Excel Row": i + 1, "Product Name": product_name, "Bundle Seller SKU": raw_sku,
+                    "Excel Row": i + 1,
+                    "Product Name": product_name,
+                    "Bundle Seller SKU": raw_sku,
                     "Missing Component SKUs": ", ".join(result["missing_skus"]),
-                    "Original Quantity": original_qty, "Final Quantity": final_qty,
+                    "Original Quantity": original_qty,
+                    "Final Quantity": final_qty,
                     "Reason": "Bundle component SKU missing in inventory file, quantity set to 0"
                 })
 
@@ -164,19 +194,33 @@ if tiktok_file and inventory_file:
         st.success("✅ 匹配完成！点击下方按钮复制整个库存列：")
         st.code(output_text, language="text")
         st.markdown(
-            f"""<button onclick="navigator.clipboard.writeText(`{output_text}`)"
-            style="background-color:#4CAF50;color:white;padding:10px 16px;border:none;
-            border-radius:5px;cursor:pointer;margin-top:10px;">📋 一键复制库存列</button>""",
+            f"""
+            <button onclick="navigator.clipboard.writeText(`{output_text}`)"
+            style="
+                background-color:#4CAF50;
+                color:white;
+                padding:10px 16px;
+                border:none;
+                border-radius:5px;
+                cursor:pointer;
+                margin-top:10px;
+            ">
+            📋 一键复制库存列
+            </button>
+            """,
             unsafe_allow_html=True,
         )
 
         df_export = pd.DataFrame({
-            "SKU": df_tiktok.loc[start_row:, sku_col].astype(str).apply(clean_sku).values,  # ★ 改
+            "SKU": df_tiktok.loc[start_row:, sku_col].astype(str).apply(clean_sku).values,
             "Updated Quantity": result_list
         })
-        st.download_button("📥 下载最终库存列 CSV",
-                           data=df_export.to_csv(index=False).encode("utf-8-sig"),
-                           file_name="quantity_column.csv", mime="text/csv")
+        st.download_button(
+            "📥 下载最终库存列 CSV",
+            data=df_export.to_csv(index=False).encode("utf-8-sig"),
+            file_name="quantity_column.csv",
+            mime="text/csv",
+        )
 
         st.divider()
 
@@ -184,23 +228,30 @@ if tiktok_file and inventory_file:
             st.warning("⚠️ 以下单品 SKU 未匹配，已保留 TikTok 原库存。请重点检查这些 SKU。")
             df_preserved = pd.DataFrame(preserved_original_records)
             st.dataframe(df_preserved, use_container_width=True)
-            st.download_button("📥 下载：未匹配且保留原库存的单品 SKU 清单",
-                               data=df_preserved.to_csv(index=False).encode("utf-8-sig"),
-                               file_name="unmatched_single_skus_kept_original_qty.csv", mime="text/csv")
+            st.download_button(
+                "📥 下载：未匹配且保留原库存的单品 SKU 清单",
+                data=df_preserved.to_csv(index=False).encode("utf-8-sig"),
+                file_name="unmatched_single_skus_kept_original_qty.csv",
+                mime="text/csv",
+            )
         else:
-            st.success("✅ 没有发现"单品 SKU 未匹配但保留原库存"的情况。")
+            st.success('✅ 没有发现"单品 SKU 未匹配但保留原库存"的情况。')
 
         if bundle_missing_records:
             st.warning("⚠️ 以下 Bundle SKU 有组件未匹配，程序已按原逻辑将 Bundle 库存设置为 0。")
             df_bundle_missing = pd.DataFrame(bundle_missing_records)
             st.dataframe(df_bundle_missing, use_container_width=True)
-            st.download_button("📥 下载：Bundle 缺失组件 SKU 清单",
-                               data=df_bundle_missing.to_csv(index=False).encode("utf-8-sig"),
-                               file_name="bundle_missing_component_skus_set_zero.csv", mime="text/csv")
+            st.download_button(
+                "📥 下载：Bundle 缺失组件 SKU 清单",
+                data=df_bundle_missing.to_csv(index=False).encode("utf-8-sig"),
+                file_name="bundle_missing_component_skus_set_zero.csv",
+                mime="text/csv",
+            )
 
         if all_unmatched_skus:
             uniq = list(dict.fromkeys(all_unmatched_skus))
-            st.info("📌 所有未在库存表中找到的 SKU 汇总：\n\n" + "\n".join(uniq))
+            st.info("📌 所有未在库存表中找到的 SKU 汇总：")
+            st.code("\n".join(uniq), language="text")
 
     except Exception as e:
         st.error(f"❌ 发生错误：{e}")
