@@ -9,7 +9,7 @@ st.title("📋 TikTok Quantity 列生成器（含一键复制）")
 
 st.markdown("""
 将 TikTok 模板中的 `Seller SKU` 与库存表中的 `SKU编码` 对应，
-仅生成 `Quantity in U.S Pickup Warehouse` 的数字列，
+仅生成 `Quantity in Pick Up Warehouse`（模板 U 列）的数字列，
 📋 可直接 **一键复制**，粘贴回模板中。
 
 本版更新：
@@ -30,6 +30,13 @@ def clean_sku(s: str) -> str:
         .replace('‍', '')
         .replace('﻿', '')
     )
+
+
+# 单元格转字符串，空单元格（NaN）返回 ""
+def cell_str(v) -> str:
+    if pd.isna(v):
+        return ""
+    return str(v).strip()
 
 
 # Bundle 拆分
@@ -111,9 +118,9 @@ if tiktok_file and inventory_file:
 
         for i in range(min(20, len(df_tiktok))):
             row = df_tiktok.iloc[i].astype(str).str.strip()
-            if "Seller SKU" in row.values and "Quantity in U.S Pickup Warehouse" in row.values:
+            if "Seller SKU" in row.values and "Quantity in Pick Up Warehouse" in row.values:
                 sku_col = row[row == "Seller SKU"].index[0]
-                qty_col = row[row == "Quantity in U.S Pickup Warehouse"].index[0]
+                qty_col = row[row == "Quantity in Pick Up Warehouse"].index[0]
                 header_row_index = i
                 for idx, val in row.items():
                     if str(val).strip().lower() in ["product name", "product name*", "product title", "product"]:
@@ -122,7 +129,7 @@ if tiktok_file and inventory_file:
                 break
 
         if sku_col is None or qty_col is None:
-            st.error("❌ 未找到表头：请确认是否为 TikTok 批量编辑模板。")
+            st.error("❌ 未找到表头 `Seller SKU` / `Quantity in Pick Up Warehouse`：请确认是否为 TikTok 批量编辑模板。")
             st.stop()
 
         df_inventory = pd.read_csv(inventory_file)
@@ -137,7 +144,7 @@ if tiktok_file and inventory_file:
 
         start_row = header_row_index + 1
         while start_row < len(df_tiktok):
-            val = str(df_tiktok.iat[start_row, qty_col]).strip()
+            val = cell_str(df_tiktok.iat[start_row, qty_col])
             if val.replace(".", "", 1).isdigit() or val == "":
                 break
             start_row += 1
@@ -149,7 +156,7 @@ if tiktok_file and inventory_file:
 
         for i in range(start_row, len(df_tiktok)):
             raw_sku = clean_sku(df_tiktok.iat[i, sku_col])
-            original_qty = str(df_tiktok.iat[i, qty_col]).strip()
+            original_qty = cell_str(df_tiktok.iat[i, qty_col])
 
             if raw_sku == "" or raw_sku.lower() == "nan":
                 result_list.append(original_qty)
